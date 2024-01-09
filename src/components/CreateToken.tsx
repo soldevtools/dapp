@@ -1,5 +1,5 @@
 import { notify } from '../utils/notifications';
-import { FC, useCallback, useState } from 'react';
+import { FC, useState } from 'react';
 import { createCreateMetadataAccountV3Instruction } from '@metaplex-foundation/mpl-token-metadata';
 import { AuthorityType, MINT_SIZE, TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createFreezeAccountInstruction, createInitializeMintInstruction, createMintToInstruction, createSetAuthorityInstruction, getAssociatedTokenAddress, getMinimumBalanceForRentExemptMint } from '@solana/spl-token';
 import { WalletError } from '@solana/wallet-adapter-base';
@@ -62,6 +62,7 @@ export const CreateToken: FC = () => {
 							return;
 						}
 
+						const decimalsInt = parseInt(decimals);
 						const mint = Keypair.generate();
 						const ata = await getAssociatedTokenAddress(mint.publicKey, publicKey);
 
@@ -79,9 +80,9 @@ export const CreateToken: FC = () => {
 								lamports: await getMinimumBalanceForRentExemptMint(connection),
 								programId: TOKEN_PROGRAM_ID
 							}),
-							createInitializeMintInstruction(mint.publicKey, decimals, publicKey, revokeFreeze ? null : publicKey),
+							createInitializeMintInstruction(mint.publicKey, decimalsInt, publicKey, revokeFreeze ? null : publicKey),
 							createAssociatedTokenAccountInstruction(publicKey, ata, publicKey, mint.publicKey),
-							createMintToInstruction(mint.publicKey, ata, publicKey, BigInt(form.supply.value) * BigInt(Math.pow(10, decimals))),
+							createMintToInstruction(mint.publicKey, ata, publicKey, BigInt(form.supply.value) * BigInt(Math.pow(10, decimalsInt))),
 							createCreateMetadataAccountV3Instruction({
 								metadata,
 								mint: mint.publicKey,
@@ -166,98 +167,6 @@ export const CreateToken: FC = () => {
 
 		setStep(step - 1);
 	};
-
-	const onSubmit = useCallback(async e => {
-		e.preventDefault();
-
-		if (submitting) {
-			return;
-		}
-
-		submitting = true;
-
-		await (async () => {
-			try {
-				if (!publicKey) {
-					notify({ type: 'error', message: 'Not connected', description: 'Wallet is not connected.' });
-					return;
-				}
-
-				const form = e.currentTarget;
-				const decimals = parseInt(form.decimals.value);
-
-				const mint = Keypair.generate();
-				const ata = await getAssociatedTokenAddress(mint.publicKey, publicKey);
-
-				const [metadata] = await PublicKey.findProgramAddressSync([
-					Buffer.from('metadata'),
-					METAPLEX_PROGRAM_ID.toBytes(),
-					mint.publicKey.toBytes()
-				], METAPLEX_PROGRAM_ID);
-
-				const instructions = [
-					SystemProgram.createAccount({
-						fromPubkey: publicKey,
-						newAccountPubkey: mint.publicKey,
-						space: MINT_SIZE,
-						lamports: await getMinimumBalanceForRentExemptMint(connection),
-						programId: TOKEN_PROGRAM_ID
-					}),
-					createInitializeMintInstruction(mint.publicKey, decimals, publicKey, revokeFreeze ? null : publicKey),
-					createAssociatedTokenAccountInstruction(publicKey, ata, publicKey, mint.publicKey),
-					createMintToInstruction(mint.publicKey, ata, publicKey, BigInt(form.supply.value) * BigInt(Math.pow(10, decimals))),
-					createCreateMetadataAccountV3Instruction({
-						metadata,
-						mint: mint.publicKey,
-						mintAuthority: publicKey,
-						payer: publicKey,
-						updateAuthority: publicKey
-					},
-					{
-						createMetadataAccountArgsV3: {
-							collectionDetails: null,
-							data: {
-								creators: null,
-								collection: null,
-								name: form.name.value,
-								sellerFeeBasisPoints: 0,
-								symbol: form.symbol.value,
-								uri: form.uri.value,
-								uses: null
-							},
-							isMutable: true
-						}
-					})
-				];
-
-				if (revokeMint) {
-					instructions.push(createSetAuthorityInstruction(mint.publicKey, publicKey, AuthorityType.MintTokens, null));
-				}
-
-				const latestBlockhash = await connection.getLatestBlockhash();
-
-				const transaction = new VersionedTransaction(new TransactionMessage({
-					payerKey: publicKey,
-					recentBlockhash: latestBlockhash.blockhash,
-					instructions
-				}).compileToV0Message());
-
-				transaction.sign([mint]);
-				const signature = await sendTransaction(transaction, connection);
-				notify({ type: 'info', message: 'Creating', description: 'Token is being created.' });
-				await connection.confirmTransaction({ signature, ...latestBlockhash }, 'confirmed');
-				setTokenAddress(mint.publicKey.toString());
-				notify({ message: 'Created', description: 'Token was created.', txid: signature });
-			} catch (error: any) {
-				if (!(error instanceof WalletError)) {
-					notify({ type: 'error', message: error.name, description: error?.message });
-					console.error(error);
-				}
-			}
-		})();
-
-		submitting = false;
-    }, [notify, connection, publicKey, sendTransaction, revokeMint, revokeFreeze]);
 
     return (
 		<div style={{ maxWidth: '500px' }}>
@@ -360,7 +269,7 @@ export const CreateToken: FC = () => {
 				<form onSubmit={next}>
 					<label className="label" htmlFor="metadataURI">Metadata URI</label>
 					<input
-						maxLength="200"
+						maxLength={200}
 						className="form-control block mb-4 w-full px-4 py-2 text-xl font-normal text-gray-700 bg-white bg-clip-padding border border-solid border-gray-300 rounded transition ease-in-out m-0 focus:text-gray-700 focus:bg-white focus:border-blue-600 focus:outline-none"
 						id="metadataURI"
 						name="metadataURI"
